@@ -22,6 +22,8 @@ import threading
 import weakref
 import select
 
+import serial
+
 import libusb1
 import usb1
 
@@ -285,6 +287,60 @@ class UsbHandle(object):
             if device_matcher is None or device_matcher(handle):
                 yield handle
 
+class SerialHandle(object):
+    def __init__(self, serial, timeout_ms=None):
+
+        if isinstance(serial, (bytes, bytearray)):
+            serial = serial.decode('utf-8')
+
+        if ',' in serial:
+            self.port, self.speed = serial.split(',')
+        else:
+            self.port = serial
+            self.speed = 115200
+
+        self._connection = None
+        self._serial_number = '%s,%s' % (self.port, self.speed)
+        self._timeout_ms = float(timeout_ms) if timeout_ms else None
+
+        self._connect()
+
+    def _connect(self):
+        timeout = self.TimeoutSeconds(self._timeout_ms)
+        
+        self._connection = serial.Serial(self.port, self.speed, timeout=timeout)
+
+    @property
+    def serial_number(self):
+        return self._serial_number
+
+    def BulkWrite(self, data, timeout=None):
+        t = self.TimeoutSeconds(timeout)
+        _, writeable, _ = select.select([], [self._connection], [], t)
+        if writeable:
+            return self._connection.write(data)
+        msg = 'Sending data to {} timed out after {}s. No data was sent.'.format(
+            self.serial_number, t)
+        raise serial.SerialTimeoutException(msg)
+
+    def BulkRead(self, numbytes, timeout=None):
+        t = self.TimeoutSeconds(timeout)
+        readable, _, _ = select.select([self._connection], [], [], t)
+        if readable:
+            return self._connection.read(numbytes)
+        msg = 'Reading from {} timed out (Timeout {}s)'.format(
+            self._serial_number, t)
+        #raise serial.TcpTimeoutException(msg)
+
+    def Timeout(self, timeout_ms):
+        return float(timeout_ms) if timeout_ms is not None else self._timeout_ms
+
+    def TimeoutSeconds(self, timeout_ms):
+        timeout = self.Timeout(timeout_ms)
+        return timeout / 1000.0 if timeout is not None else timeout
+
+    def Close(self):
+        return self._connection.close()
 
 class TcpHandle(object):
     """TCP connection object.

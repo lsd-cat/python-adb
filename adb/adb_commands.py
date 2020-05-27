@@ -134,6 +134,8 @@ class AdbCommands(object):
 
             if serial and ':' in serial:
                 self._handle = common.TcpHandle(serial, timeout_ms=default_timeout_ms)
+            elif 'tty' in serial:
+                self._handle = common.SerialHandle(serial, timeout_ms=default_timeout_ms)
             else:
                 self._handle = common.UsbHandle.FindAndOpen(
                     DeviceIsAvailable, port_path=port_path, serial=serial,
